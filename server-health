@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---- color handling (TTY only) ----
+if [[ -t 1 ]]; then
+    GREEN="\033[0;32m"
+    RED="\033[0;31m"
+    YELLOW="\033[0;33m"
+    BOLD="\033[1m"
+    RESET="\033[0m"
+else
+    GREEN=""
+    RED=""
+    YELLOW=""
+    BOLD=""
+    RESET=""
+fi
+
+fail=0
+
+echo
+
+# ---- mount check ----
+printf "%bStorage%b\n" "$BOLD" "$RESET"
+
+if mountpoint -q /mnt/nas; then
+    echo -e "${GREEN}[OK]${RESET}   /mnt/nas mounted"
+else
+    echo -e "${RED}[DOWN]${RESET} /mnt/nas NOT mounted"
+    fail=1
+fi
+
+echo
+
+printf "%bNAS service check%b\n\n" "$BOLD" "$RESET"
+
+# ---- uptime / boot ----
+uptime_pretty=$(uptime -p | sed 's/^up //')
+boot_time=$(who -b | awk '{print $3, $4}')
+
+echo "Uptime:  $uptime_pretty"
+echo "Booted:  $boot_time"
+echo
+
+# ---- system services ----
+printf "%bSystem services%b\n" "$BOLD" "$RESET"
+
+check_systemd() {
+    local svc="$1"
+    local critical="${2:-1}"  # default: critical
+
+    if systemctl is-active --quiet "$svc"; then
+        echo -e "${GREEN}[OK]${RESET}   $svc"
+    else
+        if [ "$critical" -eq 1 ]; then
+            echo -e "${RED}[DOWN]${RESET} $svc (CRITICAL)"
+            fail=1
+        else
+            echo -e "${YELLOW}[WARN]${RESET} $svc (non-critical)"
+        fi
+    fi
+}
+
+# Core services
+check_systemd tailscaled
+check_systemd smbd
+check_systemd nmbd
+check_systemd docker
+
+# Pi-hole
+check_systemd pihole-FTL 1      # DNS engine (critical)
+check_systemd lighttpd 0        # Web UI (non-critical)
+
+echo
+
+# ---- docker containers ----
+printf "%bDocker containers%b\n" "$BOLD" "$RESET"
+
+check_docker() {
+    local name="$1"
+
+    if docker ps --format '{{.Names}}' | grep -qx "$name"; then
+        policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$name" 2>/dev/null || echo "unknown")
+        if [[ "$policy" == "always" || "$policy" == "unless-stopped" ]]; then
+            echo -e "${GREEN}[OK]${RESET}   $name (restart: $policy)"
+        else
+            echo -e "${YELLOW}[WARN]${RESET} $name (restart: $policy)"
+        fi
+    else
+        echo -e "${RED}[DOWN]${RESET} $name"
+        fail=1
+    fi
+}
+
+check_docker jellyfin
+check_docker immich_server
+check_docker immich_microservices
+check_docker immich_postgres
+check_docker immich_redis
+
+echo
+
+# ---- summary ----
+if [[ "$fail" -eq 0 ]]; then
+    echo -e "${GREEN}All critical services are running and storage is mounted.${RESET}"
+else
+    echo -e "${RED}One or more critical components are NOT ready.${RESET}"
+    exit 1
+fi
