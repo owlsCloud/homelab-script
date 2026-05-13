@@ -4,7 +4,7 @@ A collection of Bash scripts for managing and monitoring my self-hosted homelab 
 
 ## Scripts
 
-### `ssh-login-check.sh`
+### `server-health`
 
 Runs automatically on SSH login via `/etc/profile.d/`. Gives an at-a-glance health check of the system without having to run anything manually.
 
