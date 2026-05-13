@@ -4,9 +4,9 @@ A collection of Bash scripts for managing and monitoring my self-hosted homelab 
 
 ## Scripts
 
-### `server-health.sh`
+### `nas_check`
 
-Runs automatically on SSH login via `/etc/profile.d/`. Gives an at-a-glance health check of the system without having to run anything manually.
+Runs automatically on SSH login. Gives an at-a-glance health check of the system without having to run anything manually.
 
 **Checks:**
 - NAS mount point status (`/mnt/nas`)
@@ -23,8 +23,17 @@ Runs automatically on SSH login via `/etc/profile.d/`. Gives an at-a-glance heal
 
 **Setup:**
 ```bash
-sudo cp server-health.sh /etc/profile.d/server-health.sh
-sudo chmod +x /etc/profile.d/server-health.sh
+mkdir -p ~/bin
+cp nas_check ~/bin/nas_check
+chmod +x ~/bin/nas_check
+```
+
+Then add the following to your `~/.bashrc` or `~/.bash_profile`:
+```bash
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    "$HOME/bin/nas_check" || true
+    echo
+fi
 ```
 
 ## Stack
