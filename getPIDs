@@ -5,7 +5,6 @@ declare -A APPS=(
   [vesktop]="vesktop"
   [steam]="steam"
   [firefox]="firefox"
-  [qbittorrent]="qbittorrent"
 )
 
 echo ""
