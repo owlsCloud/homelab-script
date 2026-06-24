@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# Hardcoded apps: vesktop, steam, firefox, qbittorrent
+declare -A APPS=(
+  [vesktop]="vesktop"
+  [steam]="steam"
+  [firefox]="firefox"
+  [qbittorrent]="qbittorrent"
+)
+
+echo ""
+echo "============================================"
+echo "         Process Manager"
+echo "============================================"
+
+declare -A PID_MAP
+declare -A LABEL_MAP
+INDEX=1
+
+for APP in vesktop steam firefox qbittorrent; do
+  PATTERN="${APPS[$APP]}"
+
+  # Get matching processes; pin firefox and steam to their single main process
+  if [[ "$APP" == "firefox" ]]; then
+    MATCHES=$(ps -eo pid,comm,args \
+      | grep "firefox --name org.mozilla.firefox" \
+      | grep -v "grep" \
+      | grep -v "$0")
+  elif [[ "$APP" == "steam" ]]; then
+    MATCHES=$(ps -eo pid,comm,args \
+      | grep "steam.sh" \
+      | grep -v "grep" \
+      | grep -v "$0")
+  else
+    MATCHES=$(ps -eo pid,comm,args \
+      | grep -i "$PATTERN" \
+      | grep -v "grep" \
+      | grep -v "$0")
+  fi
+
+  if [[ -z "$MATCHES" ]]; then
+    printf "  %-14s  not running\n" "[$APP]"
+  else
+    while IFS= read -r line; do
+      PID=$(echo "$line" | awk '{print $1}')
+      CMD=$(echo "$line" | awk '{$1=$2=""; print $0}' | xargs | cut -c1-50)
+      printf "  [%d] %-14s  PID: %-8s  %s\n" "$INDEX" "$APP" "$PID" "$CMD"
+      PID_MAP[$INDEX]=$PID
+      LABEL_MAP[$INDEX]=$APP
+      ((INDEX++))
+    done <<< "$MATCHES"
+  fi
+done
+
+echo "============================================"
+echo ""
+
+if [[ ${#PID_MAP[@]} -eq 0 ]]; then
+  echo "No matching processes are running."
+  exit 0
+fi
+
+echo "Which would you like to terminate?"
+echo "  • Enter a number (e.g. 1)"
+echo "  • Enter multiple numbers separated by spaces (e.g. 1 3)"
+echo "  • Enter 'all' to terminate all"
+echo "  • Press Enter or type 'q' to quit"
+echo ""
+read -rp "> " SELECTION
+
+if [[ -z "$SELECTION" || "$SELECTION" == "q" ]]; then
+  echo "Aborted. No processes were terminated."
+  exit 0
+fi
+
+# Resolve selections to PIDs
+TARGETS=()
+TARGET_LABELS=()
+
+if [[ "$SELECTION" == "all" ]]; then
+  for i in "${!PID_MAP[@]}"; do
+    TARGETS+=("${PID_MAP[$i]}")
+    TARGET_LABELS+=("${LABEL_MAP[$i]} (PID ${PID_MAP[$i]})")
+  done
+else
+  for NUM in $SELECTION; do
+    if [[ "$NUM" =~ ^[0-9]+$ ]] && [[ -n "${PID_MAP[$NUM]}" ]]; then
+      TARGETS+=("${PID_MAP[$NUM]}")
+      TARGET_LABELS+=("${LABEL_MAP[$NUM]} (PID ${PID_MAP[$NUM]})")
+    else
+      echo "  ⚠ '$NUM' is not a valid selection — skipping"
+    fi
+  done
+fi
+
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  echo "No valid selections made. Exiting."
+  exit 1
+fi
+
+echo ""
+echo "About to terminate:"
+for LABEL in "${TARGET_LABELS[@]}"; do
+  echo "  • $LABEL"
+done
+echo ""
+read -rp "Confirm? [y/N]: " CONFIRM
+
+case "$CONFIRM" in
+  [yY][eE][sS]|[yY])
+    for i in "${!TARGETS[@]}"; do
+      PID="${TARGETS[$i]}"
+      LABEL="${TARGET_LABELS[$i]}"
+      kill "$PID" 2>/dev/null
+      if [[ $? -eq 0 ]]; then
+        echo "  ✓ Terminated $LABEL"
+      else
+        echo "  ✗ Failed to terminate $LABEL (try running with sudo)"
+      fi
+    done
+    ;;
+  *)
+    echo "Aborted. No processes were terminated."
+    exit 0
+    ;;
+esac
